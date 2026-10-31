@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculadora</title>
+
+<style>
+  /* ---------- CORES (mude aqui para trocar o visual) ---------- */
+  :root {
+    --fundo: #cfd6c8;
+    --corpo: #e9ece4;
+    --tecla: #fbfbf8;
+    --tecla-sombra: #b9c0b2;
+    --operador: #2f4b7c;
+    --operador-texto: #ffffff;
+    --igual: #e3a812;
+    --limpar: #b5483a;
+    --visor-fundo: #1f2a24;
+    --visor-texto: #c9f0b8;
+    --texto: #1d241f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    min-height: 100dvh; /* altura real da tela no iPhone */
+    display: grid;
+    place-items: center;
+    background: var(--fundo);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--texto);
+  }
+
+  .calculadora {
+    width: min(92vw, 340px);
+    padding: 18px;
+    background: var(--corpo);
+    border-radius: 22px;
+    box-shadow: 0 10px 0 var(--tecla-sombra), 0 24px 40px rgba(0, 0, 0, .18);
+  }
+
+  /* ---------- VISOR ---------- */
+  .visor {
+    background: var(--visor-fundo);
+    color: var(--visor-texto);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    text-align: right;
+    font-family: Consolas, "Courier New", monospace;
+    overflow: hidden;
+  }
+  .visor .conta {
+    min-height: 1.3em;
+    font-size: 0.95rem;
+    opacity: .6;
+  }
+  .visor .numero {
+    font-size: 2.4rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ---------- TECLAS ---------- */
+  .teclas {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  button {
+    font: inherit;
+    font-size: 1.3rem;
+    font-weight: 600;
+    padding: 16px 0;
+    border: none;
+    border-radius: 12px;
+    background: var(--tecla);
+    color: var(--texto);
+    box-shadow: 0 4px 0 var(--tecla-sombra);
+    cursor: pointer;
+    touch-action: manipulation;              /* sem zoom ao tocar rápido duas vezes */
+    -webkit-tap-highlight-color: transparent; /* sem flash cinza no iPhone */
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform .06s, box-shadow .06s;
+  }
+  button:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--tecla-sombra);
+  }
+  button:focus-visible {
+    outline: 3px solid var(--operador);
+    outline-offset: 2px;
+  }
+
+  button.operador { background: var(--operador); color: var(--operador-texto); }
+  button.igual    { background: var(--igual); }
+  button.limpar   { background: var(--limpar); color: #fff; }
+  button.largo    { grid-column: span 2; }
+</style>
+</head>
+
+<body>
+  <main class="calculadora">
+    <div class="visor" aria-live="polite">
+      <div class="conta" id="conta"></div>
+      <div class="numero" id="numero">0</div>
+    </div>
+
+    <div class="teclas">
+      <!-- data-acao diz o que a tecla faz; data-valor é o número ou operador -->
+      <button class="limpar" data-acao="limpar">C</button>
+      <button data-acao="apagar">⌫</button>
+      <button data-acao="porcentagem">%</button>
+      <button class="operador" data-acao="operador" data-valor="÷">÷</button>
+
+      <button data-acao="digito" data-valor="7">7</button>
+      <button data-acao="digito" data-valor="8">8</button>
+      <button data-acao="digito" data-valor="9">9</button>
+      <button class="operador" data-acao="operador" data-valor="×">×</button>
+
+      <button data-acao="digito" data-valor="4">4</button>
+      <button data-acao="digito" data-valor="5">5</button>
+      <button data-acao="digito" data-valor="6">6</button>
+      <button class="operador" data-acao="operador" data-valor="−">−</button>
+
+      <button data-acao="digito" data-valor="1">1</button>
+      <button data-acao="digito" data-valor="2">2</button>
+      <button data-acao="digito" data-valor="3">3</button>
+      <button class="operador" data-acao="operador" data-valor="+">+</button>
+
+      <button data-acao="sinal">±</button>
+      <button data-acao="digito" data-valor="0">0</button>
+      <button data-acao="ponto">,</button>
+      <button class="igual" data-acao="igual">=</button>
+    </div>
+  </main>
+
+<script>
+  // ---------- ESTADO DA CALCULADORA ----------
+  let atual = "0";          // número que está sendo digitado (texto)
+  let anterior = null;      // primeiro número da conta
+  let operador = null;      // + − × ÷
+  let novoNumero = false;   // true = próximo dígito começa um número novo
+  let erro = false;
+
+  const visorNumero = document.getElementById("numero");
+  const visorConta = document.getElementById("conta");
+
+  // Mostra o número com vírgula, como no Brasil
+  function formatar(texto) {
+    return texto.replace(".", ",");
+  }
+
+  function atualizarVisor() {
+    visorNumero.textContent = formatar(atual);
+    visorConta.textContent =
+      operador !== null ? formatar(String(anterior)) + " " + operador : "";
+  }
+
+  // ---------- AÇÕES ----------
+  function digitar(d) {
+    if (novoNumero) {
+      atual = d;
+      novoNumero = false;
+    } else if (atual.replace(/[-.]/g, "").length < 12) {
+      atual = atual === "0" ? d : atual + d;
+    }
+  }
+
+  function ponto() {
+    if (novoNumero) {
+      atual = "0.";
+      novoNumero = false;
+    } else if (!atual.includes(".")) {
+      atual += ".";
+    }
+  }
+
+  function escolherOperador(op) {
+    // Se já tinha uma conta pendente, resolve antes (ex.: 2 + 3 + ...)
+    if (operador !== null && !novoNumero) calcular();
+    if (erro) return;
+    anterior = parseFloat(atual);
+    operador = op;
+    novoNumero = true;
+  }
+
+  function calcular() {
+    const a = anterior;
+    const b = parseFloat(atual);
+    let resultado;
+
+    // Sem usar eval(): cada operação é feita de forma explícita e segura
+    switch (operador) {
+      case "+": resultado = a + b; break;
+      case "−": resultado = a - b; break;
+      case "×": resultado = a * b; break;
+      case "÷":
+        if (b === 0) { mostrarErro(); return; }
+        resultado = a / b;
+        break;
+      default: return;
+    }
+
+    // toFixed evita problemas como 0.1 + 0.2 = 0.30000000000000004
+    atual = String(Number(resultado.toFixed(10)));
+    if (atual.length > 14) atual = Number(resultado).toPrecision(10);
+    anterior = null;
+    operador = null;
+    novoNumero = true;
+  }
+
+  function igual() {
+    if (operador === null) return;
+    calcular();
+  }
+
+  function mostrarErro() {
+    atual = "Não dá";
+    anterior = null;
+    operador = null;
+    erro = true;
+  }
+
+  function limpar() {
+    atual = "0";
+    anterior = null;
+    operador = null;
+    novoNumero = false;
+    erro = false;
+  }
+
+  function apagar() {
+    if (novoNumero) return;
+    atual = atual.length > 1 && !(atual.length === 2 && atual.startsWith("-"))
+      ? atual.slice(0, -1)
+      : "0";
+  }
+
+  function porcentagem() {
+    atual = String(parseFloat(atual) / 100);
+    novoNumero = true;
+  }
+
+  function inverterSinal() {
+    if (atual === "0") return;
+    atual = atual.startsWith("-") ? atual.slice(1) : "-" + atual;
+  }
+
+  // ---------- LIGA OS BOTÕES ÀS AÇÕES ----------
+  function executar(acao, valor) {
+    if (erro) limpar();   // depois de um erro, qualquer tecla recomeça
+
+    switch (acao) {
+      case "digito":      digitar(valor); break;
+      case "ponto":       ponto(); break;
+      case "operador":    escolherOperador(valor); break;
+      case "igual":       igual(); break;
+      case "limpar":      limpar(); break;
+      case "apagar":      apagar(); break;
+      case "porcentagem": porcentagem(); break;
+      case "sinal":       inverterSinal(); break;
+    }
+    atualizarVisor();
+  }
+
+  document.querySelector(".teclas").addEventListener("click", (e) => {
+    const botao = e.target.closest("button");
+    if (!botao) return;
+    executar(botao.dataset.acao, botao.dataset.valor);
+  });
+
+  // ---------- TECLADO ----------
+  document.addEventListener("keydown", (e) => {
+    const k = e.key;
+    if (/^[0-9]$/.test(k))        executar("digito", k);
+    else if (k === "." || k === ",") executar("ponto");
+    else if (k === "+")           executar("operador", "+");
+    else if (k === "-")           executar("operador", "−");
+    else if (k === "*" || k === "x") executar("operador", "×");
+    else if (k === "/")           { e.preventDefault(); executar("operador", "÷"); }
+    else if (k === "Enter" || k === "=") { e.preventDefault(); executar("igual"); }
+    else if (k === "Backspace")   executar("apagar");
+    else if (k === "Escape" || k === "c" || k === "C") executar("limpar");
+    else if (k === "%")           executar("porcentagem");
+  });
+
+  atualizarVisor();
+</script>
+</body>
+</html>
